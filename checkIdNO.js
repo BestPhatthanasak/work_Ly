@@ -1,5 +1,3 @@
-const express = require('express');
-const app = express();
 const puppeteer = require('puppeteer');
 const inquirer = require('inquirer');
 const { delay } = require('./delay');
@@ -10,10 +8,6 @@ const detailsUsers = require('./detailsUsers');
 const solver = new Captcha.Solver('cf1a57cf69187a04ab9878c42f07a7b9'); // *_?
 
 const url = 'https://recruit-lottery-seller.glo.or.th/recruit/index.php/pages/registerbnrseller';
-
-const port = 5005;
-
-let userStatus;
 
 // let count = 0;
 let count2 = 1;
@@ -48,47 +42,43 @@ const wait_for_browser = (browser_handler) =>
 	});
 
 const registerNewUser = async (page, prop) => {
-	let res = {};
 	await delay(2000);
 	await page.goto(`${url}`);
+	// 	.then(async () => {
 	await delay(1000);
 	await typeText(page, '#idno', prop.idNo);
 	await delay(500);
-	await typeText(page, '#mobile', prop.mobile); // โดยขึ้นต้นด้วย 0 ตามด้วย 6/8/9 และตามด้วยตัวเลข 8 หลัก
+	await typeText(page, '#mobile', prop.mobile);
 	await delay(1000);
 
-	let random_word = await page.evaluate(() => {
-		return document.querySelector('#random_word').value;
+	const captcha = await page.$('#image_captcha > img');
+	const box = await captcha.boundingBox();
+	const x = box['x'];
+	const y = box['y'];
+	const w = box['width'];
+	const h = box['height'];
+	await page.screenshot({ path: 'image/captcha.png', clip: { x: x, y: y, width: w, height: h } });
+
+	await delay(3000);
+	const captchaText = await solver.imageCaptcha(fs.readFileSync('image/captcha.png', 'base64')).then((res) => {
+		return res.data;
 	});
-
 	await delay(1000);
-	await typeText(page, '#captcha_security', random_word);
+	await typeText(page, '#captcha_security', captchaText);
 	await delay(500);
 	await clicked(page, '#myform1 > div:nth-child(6) > div > input:nth-child(3)');
 	await delay(2000);
 
-	// check error idNo and mobile
-	try {
-		let checkErrorIdNo = await page.evaluate(() => {
-			const element = document.querySelector('#iderror > div');
-			return (element && element.textContent) || undefined;
-		});
-
-		let checkErrorMobile = await page.evaluate(() => {
-			const element = document.querySelector('#myform1 > div.form-group.mb-2 > div > div.text-danger > div');
-			return (element && element.textContent) || undefined;
-		});
-
-		prop.errorIdNo = checkErrorIdNo;
-		prop.errorMobile = checkErrorMobile;
-
-		userStatus = await readWriteFile('Failed', prop);
-		await delay(2000);
-		res = { status: 'Failed', data: userStatus };
-	} catch (error) {
-		console.log(error);
-	}
-	return res;
+	// })
+	// .catch(async () => {
+	// 	if (count <= 250) {
+	// 		console.log('count', count++);
+	// 		await delay(5000);
+	// 		await registerNewUser(page, prop);
+	// 	} else {
+	// 		process.exit();
+	// 	}
+	// });
 };
 
 const address = async (page, prop) => {
@@ -175,7 +165,6 @@ const personVerifyotp = async (page) => {
 };
 
 const detailsUser = async (page, prop) => {
-	let resData;
 	try {
 		await radio(page, '#\\31'); // บุคคลทั่วไป #\\31 || คนพิการ #\\32
 		await selectDropdown(page, 'prename', 'นาย'); // #prename    นาย || #prename  นาง || #prename  นางสาว
@@ -233,60 +222,23 @@ const detailsUser = async (page, prop) => {
 		// บันทึกข้อมูล
 		// await clicked(page, '#myform1 > div.form-group.row.rowbtn.mb-4 > div.col-sm-3 > input');
 
+		// คลิกบันทึกรูป
+		// #myform1 > div:nth-child(1) > div > div > div:nth-child(3) > div.col-sm-8.text-primary  // ชื่อ
+		await clicked(page,'#savescreenbtn')
+
 		// save ref User
-		userStatus = await readWriteFile('Success', prop);
-		await delay(2000);
-		return { status: 'Success', data: userStatus };
+		readWriteFile('Success', prop);
+
+		return;
 	} catch (error) {
-		userStatus = await readWriteFile('Failed', prop);
-		return { status: 'Failed', data: userStatus };
+		readWriteFile('Failed', prop);
+		return;
 	}
 };
 
 const readWriteFile = (stauts, prop) => {
-	const { firstname, lastname, idNo, idno2, mobile, mobile2, image1, image2, errorIdNo, errorMobile } = prop;
-	let dataUser;
-	let dataUserArr;
-	if (errorIdNo || errorMobile) {
-		if (errorIdNo && errorMobile) {
-			dataUser = `\nสถานะ : ${stauts} (ไม่สามารถลงทะเบียนได้เนื้องจาก ${errorIdNo} และ เบอร์มือถือนี้ได้ลงทะเบียนไว้แล้ว),\nชื่อ : ${firstname} ${lastname}\nรหัสบัตรประชาชน : ${idNo}\nเบอร์โทร : ${mobile}\nรูปภาพหน้าตรงของตนเอง : ${image1}\nรูปภาพสถานที่ขาย : ${image2}\nกรณีที่ท่านมีการสั่งซื้อ-สั่งจองสลากก่อนถึงแก่กรรมภายใน\nรหัสบัตรประชาชน : ${idno2}\nเบอร์โทร : ${mobile2}\n`;
-			dataUserArr = {
-				สถานะ: `${stauts} (ไม่สามารถลงทะเบียนได้เนื้องจาก ${errorIdNo} และ เบอร์มือถือนี้ได้ลงทะเบียนไว้แล้ว)`,
-				ชื่อ: `${firstname} ${lastname}`,
-				รหัสบัตรประชาชน: `${idNo}`,
-				เบอร์โทร: `${mobile}`,
-				รูปภาพหน้าตรงของตนเอง: `${image1}`,
-				รูปภาพสถานที่ขาย: `${image2}`,
-				กรณีที่ท่านมีการสั่งซื้อสั่งจองสลากก่อนถึงแก่กรรมภายในรหัสบัตรประชาชน: `${idno2}`,
-				เบอร์โทร: `${mobile2}`
-			};
-		} else {
-			dataUser = `สถานะ : ${stauts} (ไม่สามารถลงทะเบียนได้เนื้องจาก ${errorIdNo ||
-				errorMobile})\nชื่อ : ${firstname} ${lastname}\nรหัสบัตรประชาชน : ${idNo}\nเบอร์โทร : ${mobile}\nรูปภาพหน้าตรงของตนเอง : ${image1}\nรูปภาพสถานที่ขาย : ${image2}\nกรณีที่ท่านมีการสั่งซื้อ-สั่งจองสลากก่อนถึงแก่กรรมภายใน\nรหัสบัตรประชาชน : ${idno2}\nเบอร์โทร : ${mobile2}\n`;
-			dataUserArr = {
-				สถานะ: `${stauts} (ไม่สามารถลงทะเบียนได้เนื้องจาก ${errorIdNo || errorMobile})`,
-				ชื่อ: `${firstname} ${lastname}`,
-				รหัสบัตรประชาชน: `${idNo}`,
-				เบอร์โทร: `${mobile}`,
-				รูปภาพหน้าตรงของตนเอง: `${image1}`,
-				รูปภาพสถานที่ขาย: `${image2}`,
-				กรณีที่ท่านมีการสั่งซื้อสั่งจองสลากก่อนถึงแก่กรรมภายในรหัสบัตรประชาชน: `${idno2}`,
-				เบอร์โทร: `${mobile2}`
-			};
-		}
-	} else {
-		dataUser = `สถานะ : ${stauts}\nชื่อ : ${firstname} ${lastname}\nรหัสบัตรประชาชน : ${idNo}\nเบอร์โทร : ${mobile}\nรูปภาพหน้าตรงของตนเอง : ${image1}\nรูปภาพสถานที่ขาย : ${image2}\nกรณีที่ท่านมีการสั่งซื้อ-สั่งจองสลากก่อนถึงแก่กรรมภายใน\nรหัสบัตรประชาชน : ${idno2}\nเบอร์โทร : ${mobile2}\n`;
-		dataUserArr = {
-			สถานะ: `${stauts}`,
-			ชื่อ: `${firstname} ${lastname}`,
-			รหัสบัตรประชาชน: `${idNo}`,
-			เบอร์โทร: `${mobile}`,
-			รูปภาพหน้าตรงของตนเอง: `${image1}`,
-			รูปภาพสถานที่ขาย: `${image2}`,
-			กรณีที่ท่านมีการสั่งซื้อสั่งจองสลากก่อนถึงแก่กรรมภายในรหัสบัตรประชาชน: `${idno2}`,
-			เบอร์โทร: `${mobile2}`
-		};
-	}
+	const { firstname, lastname, idNo, mobile, image1, image2 } = prop;
+	const dataUser = `stauts : ${stauts}\nชื่อ : ${firstname} ${lastname}\nรหัสบัตรประชาชน : ${idNo}\nเบอร์โทร : ${mobile}\nรูปภาพหน้าตรงของตนเอง : ${image1}\nรูปภาพสถานที่ขาย : ${image2}\n\n`;
 	fs.readFile('report.txt', (err, data) => {
 		if (err) {
 			fs.writeFile('report.txt', '', (err) => {
@@ -304,40 +256,27 @@ const readWriteFile = (stauts, prop) => {
 			});
 		}
 	});
-	return dataUserArr;
 };
 
 const registerLottery = async () => {
 	const browser_handler = new BrowserHandler();
 	await wait_for_browser(browser_handler);
 	let page = await browser_handler.browser.newPage();
-	let resData;
+
 	console.log('\nstart\n');
 	for (let index = 0; index < detailsUsers.length; index++) {
 		const e = detailsUsers[index];
 		// console.log('registerNewUser');
-		resData = await registerNewUser(page, e);
-		if (resData.status !== 'Failed') {
-			// console.log('enterOTPCode');
-			await enterOTPCode(page, e);
-			// console.log('personVerifyotp');
-			await personVerifyotp(page);
-			// console.log('detailsUser');
-			resData = await detailsUser(page, e);
-		}
+		await registerNewUser(page, e);
+		// console.log('enterOTPCode');
+		await enterOTPCode(page, e);
+		// console.log('personVerifyotp');
+		await personVerifyotp(page);
+		// console.log('detailsUser');
+		await detailsUser(page, e);
 	}
-	await delay(1000);
-	return resData;
+	console.log('End');
+	process.exit();
 };
 
-app.get('/', async (req, res) => {
-	const reportUser = await registerLottery(res);
-	console.log('reportUser', reportUser);
-	await res.send(reportUser);
-	console.log('End');
-	// process.exit();
-});
-
-app.listen(port, () => {
-	console.log(`Example app listening at http://localhost:${port}`);
-});
+registerLottery();
